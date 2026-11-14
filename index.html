@@ -3,480 +3,124 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>分时图片展示</title>
-<meta name="description" content="按北京时间自动切换四张图片的全屏展示页面：05:00–05:59 图片1，06:00–16:59 图片2，17:00–17:59 图片3，18:00–次日 04:59 图片4。" />
+<title>分时图片</title>
 <meta name="color-scheme" content="dark" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d1014'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23e9b45f' stroke-width='2'/%3E%3Cpath d='M16 10.5v6.2l4.2 2.6' stroke='%23e9b45f' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
 <style>
-  :root{
-    --bg:#080a0d;
-    --ink:#f2f5f8;
-    --muted:rgba(242,245,248,.58);
-    --faint:rgba(242,245,248,.34);
-    --line:rgba(255,255,255,.13);
-    --accent:#e9b45f;
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #080a0d;
   }
 
-  *{box-sizing:border-box;}
-  html,body{height:100%;}
-  body{
-    margin:0;
-    overflow:hidden;
-    background:var(--bg);
-    color:var(--ink);
-    font-family:"Noto Sans SC","Noto Sans CJK SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,sans-serif;
-    -webkit-font-smoothing:antialiased;
-    text-rendering:optimizeLegibility;
+  .stage { position: fixed; inset: 0; }
+
+  /* 四张图叠放，按时间淡入淡出 */
+  .slide {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .6s ease, visibility .6s step-end;
+  }
+  .slide.is-on {
+    opacity: 1;
+    visibility: visible;
+    z-index: 2;
+    transition: opacity .6s ease, visibility 0s;
   }
 
-  /* ===== 舞台：四张图叠放，按时间淡入淡出 ===== */
-  .stage{position:fixed;inset:0;background:var(--bg);}
-
-  .slide{
-    position:absolute;
-    inset:0;
-    margin:0;
-    opacity:0;
-    visibility:hidden;
-    transition:opacity .7s ease, visibility .7s step-end;
-    will-change:opacity;
-  }
-  .slide.is-on{
-    opacity:1;
-    visibility:visible;
-    z-index:2;
-    transition:opacity .7s ease, visibility 0s;
+  .slide img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
   }
 
-  .slide img{
-    display:block;
-    width:100%;
-    height:100%;
-    object-fit:cover;
-    object-position:center;
-    /* 图片未就绪时不显示破图图标 */
-    color:transparent;
-    font-size:0;
-  }
-  body.fit-contain .slide img{object-fit:contain;}
-  body.fit-contain .slide{background:radial-gradient(120% 120% at 50% 0%, #10151c 0%, #07090c 72%);}
-
-  /* 竖屏手机：横图直接铺满会被裁成一条，改成完整显示更稳妥 */
-  body.fit-cover .slide img{object-fit:cover;}
-  @media (orientation: portrait) and (max-width: 820px){
-    body:not(.fit-cover) .slide img{object-fit:contain;}
-    body:not(.fit-cover) .slide{background:radial-gradient(120% 120% at 50% 0%, #10151c 0%, #07090c 72%);}
-  }
-
-  /* ===== 图片缺失时的兜底提示 ===== */
-  .fallback{
-    position:absolute;
-    inset:0;
-    display:none;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    gap:22px;
-    padding:32px;
-    text-align:center;
-  }
-  .slide.missing .fallback{display:flex;}
-  .slide.missing img{display:none;}
-
-  .fb-num{
-    font-size:clamp(56px, 14vw, 132px);
-    font-weight:600;
-    line-height:1;
-    letter-spacing:-.02em;
-    color:var(--accent);
-    opacity:.9;
-  }
-  .fb-title{
-    margin:0;
-    font-size:clamp(17px, 2.6vw, 24px);
-    font-weight:500;
-    line-height:1.5;
-    letter-spacing:.01em;
-  }
-  .fb-range{
-    margin:0;
-    font-size:clamp(13px, 1.6vw, 15px);
-    line-height:1.6;
-    color:var(--muted);
-    letter-spacing:.06em;
-    font-variant-numeric:tabular-nums;
-  }
-  .fb-tip{
-    margin:0;
-    max-width:min(560px, 82vw);
-    font-size:clamp(12px, 1.5vw, 14px);
-    line-height:2;
-    color:var(--faint);
-  }
-  .fb-tip code{
-    display:inline-block;
-    margin:0 3px;
-    padding:2px 7px;
-    border:1px solid var(--line);
-    border-radius:6px;
-    color:var(--ink);
-    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-    font-size:.95em;
-    background:rgba(255,255,255,.05);
-  }
-  .fb-box{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    gap:12px;
-    padding:30px 34px;
-    border:1px solid var(--line);
-    border-radius:16px;
-    background:radial-gradient(120% 100% at 50% 0%, #161c24 0%, #0a0d11 78%);
-        max-width:min(620px, 88vw);
-  }
-
-  /* ===== 底部信息条 ===== */
-  .hud{
-    position:fixed;
-    left:18px;
-    bottom:18px;
-    z-index:9;
-    display:flex;
-    align-items:center;
-    gap:10px;
-    max-width:calc(100vw - 36px);
-    padding:9px 13px;
-    border:1px solid var(--line);
-    border-radius:12px;
-    background:rgba(8,10,13,.86);
-    font-size:13px;
-    line-height:1;
-    color:var(--muted);
-    letter-spacing:.02em;
-    pointer-events:none;
-    transition:opacity .35s ease;
-  }
-  .hud.is-hidden{opacity:0;}
-  .hud .dot{
-    width:6px;height:6px;border-radius:50%;
-    background:var(--accent);
-    box-shadow:0 0 0 4px rgba(233,180,95,.14);
-    flex:none;
-  }
-  .hud .clock{
-    color:var(--ink);
-    font-variant-numeric:tabular-nums;
-    letter-spacing:.06em;
-  }
-  .hud .sep{
-    width:1px;height:13px;
-    background:var(--line);
-    flex:none;
-  }
-  .hud .rule{
-    color:var(--muted);
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    min-width:0;
-  }
-  .hud .tz{
-    color:var(--faint);
-    font-size:12px;
-    white-space:nowrap;
-  }
-
-  /* ===== 全屏按钮 ===== */
-  .fs-btn{
-    position:fixed;
-    right:18px;
-    bottom:18px;
-    z-index:9;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    width:44px;
-    height:44px;
-    padding:0;
-    border:1px solid var(--line);
-    border-radius:12px;
-    background:rgba(8,10,13,.86);
-    color:var(--muted);
-    cursor:pointer;
-    transition:color .2s ease, border-color .2s ease, background .2s ease;
-  }
-  .fs-btn:hover{color:var(--ink);border-color:rgba(255,255,255,.28);}
-  .fs-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-  .fs-btn svg{width:18px;height:18px;}
-
-  @media (max-width:560px){
-    .hud{left:12px;bottom:12px;gap:8px;padding:8px 11px;font-size:12px;}
-    .hud .tz{display:none;}
-    .fs-btn{right:12px;bottom:12px;width:42px;height:42px;}
-    .fb-num{font-size:clamp(48px,18vw,88px);}
-  }
-
-  @media (prefers-reduced-motion:reduce){
-    .slide{transition:opacity .2s ease;}
-  }
-
-  noscript{
-    position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-    padding:24px;text-align:center;font-size:15px;line-height:1.8;color:var(--muted);
+  @media (prefers-reduced-motion: reduce) {
+    .slide { transition: opacity .2s ease; }
   }
 </style>
 </head>
 <body>
 
-<main class="stage" id="stage" aria-label="按时间自动切换的图片展示">
+<main class="stage">
 
-  <!-- ===== 图片 1：05:00 – 05:59 ===== -->
+  <!-- 05:00 – 05:59 -->
   <figure class="slide" data-slot="1">
-    <img src="assets/1.jpg" data-base="assets/1" alt="图片 1：05:00 至 05:59 展示" decoding="async" fetchpriority="high" />
-    <div class="fallback" aria-hidden="true">
-      <div class="fb-box">
-        <div class="fb-num">1</div>
-        <p class="fb-title">图片 1 尚未放入</p>
-        <p class="fb-range">05:00 – 05:59</p>
-        <p class="fb-tip">把这张时段的图片命名为 <code>1.jpg</code> 放进 <code>assets/</code> 目录，刷新页面即可看到。</p>
-      </div>
-    </div>
+    <img src="assets/1.jpg" alt="" decoding="async" fetchpriority="high" />
   </figure>
 
-  <!-- ===== 图片 2：06:00 – 16:59 ===== -->
+  <!-- 06:00 – 16:59 -->
   <figure class="slide" data-slot="2">
-    <img src="assets/2.jpg" data-base="assets/2" alt="图片 2：06:00 至 16:59 展示" decoding="async" />
-    <div class="fallback" aria-hidden="true">
-      <div class="fb-box">
-        <div class="fb-num">2</div>
-        <p class="fb-title">图片 2 尚未放入</p>
-        <p class="fb-range">06:00 – 16:59</p>
-        <p class="fb-tip">把这张时段的图片命名为 <code>2.jpg</code> 放进 <code>assets/</code> 目录，刷新页面即可看到。</p>
-      </div>
-    </div>
+    <img src="assets/2.jpg" alt="" decoding="async" />
   </figure>
 
-  <!-- ===== 图片 3：17:00 – 17:59 ===== -->
+  <!-- 17:00 – 17:59 -->
   <figure class="slide" data-slot="3">
-    <img src="assets/3.jpg" data-base="assets/3" alt="图片 3：17:00 至 17:59 展示" decoding="async" />
-    <div class="fallback" aria-hidden="true">
-      <div class="fb-box">
-        <div class="fb-num">3</div>
-        <p class="fb-title">图片 3 尚未放入</p>
-        <p class="fb-range">17:00 – 17:59</p>
-        <p class="fb-tip">把这张时段的图片命名为 <code>3.jpg</code> 放进 <code>assets/</code> 目录，刷新页面即可看到。</p>
-      </div>
-    </div>
+    <img src="assets/3.jpg" alt="" decoding="async" />
   </figure>
 
-  <!-- ===== 图片 4：18:00 – 次日 04:59 ===== -->
+  <!-- 18:00 – 次日 04:59 -->
   <figure class="slide" data-slot="4">
-    <img src="assets/4.jpg" data-base="assets/4" alt="图片 4：18:00 至次日 04:59 展示" decoding="async" />
-    <div class="fallback" aria-hidden="true">
-      <div class="fb-box">
-        <div class="fb-num">4</div>
-        <p class="fb-title">图片 4 尚未放入</p>
-        <p class="fb-range">18:00 – 次日 04:59</p>
-        <p class="fb-tip">把这张时段的图片命名为 <code>4.jpg</code> 放进 <code>assets/</code> 目录，刷新页面即可看到。</p>
-      </div>
-    </div>
+    <img src="assets/4.jpg" alt="" decoding="async" />
   </figure>
 
 </main>
-
-<div class="hud" id="hud">
-  <span class="dot" aria-hidden="true"></span>
-  <span class="clock" id="hudClock">--:--:--</span>
-  <span class="sep" aria-hidden="true"></span>
-  <span class="rule" id="hudRule">正在读取时间…</span>
-  <span class="tz" id="hudTz">北京时间</span>
-</div>
-
-<button class="fs-btn" id="fsBtn" type="button" aria-label="进入全屏">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-    <path d="M4 9V4h5" /><path d="M20 15v5h-5" /><path d="M15 4h5v5" /><path d="M9 20H4v-5" />
-  </svg>
-</button>
-
-<noscript>这个页面需要用浏览器时间自动切换图片，请开启 JavaScript 后再访问。</noscript>
 
 <script>
 (function () {
   "use strict";
 
-  /* =========================================================================
-   * 排期配置：要改时间段或图片，只改这一段
-   * start / end = 整数小时（end 不含），wrap = 跨零点
-   * base = 图片文件前缀，对应 assets/1.jpg、assets/2.jpg……
-   * ========================================================================= */
+  /* 排期配置：start / end 为整点小时（end 不含），wrap 表示跨零点 */
   var RULES = [
-    { start: 5,  end: 6,  base: 1, name: "图片 1", label: "05:00–05:59" },
-    { start: 6,  end: 17, base: 2, name: "图片 2", label: "06:00–16:59" },
-    { start: 17, end: 18, base: 3, name: "图片 3", label: "17:00–17:59" },
-    { start: 18, end: 5,  base: 4, name: "图片 4", label: "18:00–次日 04:59", wrap: true }
+    { start: 5,  end: 6,  slot: 1 },
+    { start: 6,  end: 17, slot: 2 },
+    { start: 17, end: 18, slot: 3 },
+    { start: 18, end: 5,  slot: 4, wrap: true }
   ];
 
-  // 图片扩展名兜底顺序：放 .jpg 最省事，放 png / webp 也能自动认出来
-  var EXTS = [".jpg", ".jpeg", ".png", ".webp", ".JPG", ".JPEG", ".PNG", ".WEBP"];
+  var slides = {};
+  Array.prototype.forEach.call(document.querySelectorAll(".slide"), function (el) {
+    slides[el.dataset.slot] = el;
+  });
 
-  /* ---------- 1. 读取链接参数 ---------- */
-  var params = new URLSearchParams(window.location.search);
-
-  var tzOffset = 8;          // 默认按北京时间（UTC+8）判断，海外访问也不会错时段
-  var tzLabel  = "北京时间";
-
-  var tzParam = params.get("tz");
-  if (tzParam === "local") {
-    tzOffset = -new Date().getTimezoneOffset() / 60;
-    tzLabel  = "本机时间";
-  } else if (tzParam !== null && tzParam.trim() !== "" && !isNaN(Number(tzParam))) {
-    tzOffset = Number(tzParam);
-    tzLabel  = "UTC" + (tzOffset >= 0 ? "+" : "") + tzOffset;
-  }
-
-  // 预览用：?t=05:30 可强制把「当前时刻」当成 05:30，方便逐个时段检查
-  var preview = null;
-  var tParam = params.get("t");
-  if (tParam && /^\d{1,2}:\d{2}(:\d{2})?$/.test(tParam)) {
-    var seg = tParam.split(":");
-    preview = [Number(seg[0]) % 24, Number(seg[1]), Number(seg[2] || 0)];
-  }
-
-  if (params.get("fit") === "contain") {
-    document.body.classList.add("fit-contain");
-  }
-  if (params.get("fit") === "cover") {
-    document.body.classList.add("fit-cover");
-  }
-
-  var hud = document.getElementById("hud");
-  if (params.get("hud") === "0") {
-    hud.classList.add("is-hidden");
-  }
-
-  /* ---------- 2. 把「当前时刻」换算到目标时区 ---------- */
-  function zonedNow() {
+  // 统一按北京时间（UTC+8）判断
+  function minuteOfDay() {
     var d = new Date();
-    return new Date(d.getTime() + tzOffset * 3600000); // 之后统一用 getUTC*
+    var z = new Date(d.getTime() + 8 * 3600000);
+    return z.getUTCHours() * 60 + z.getUTCMinutes();
   }
 
-  function pad(n) { return n < 10 ? "0" + n : "" + n; }
-
-  /* ---------- 3. 判断当前该显示哪张图 ---------- */
-  function matchRule(minuteOfDay) {
+  function activeSlot(min) {
     for (var i = 0; i < RULES.length; i++) {
       var r = RULES[i];
       var s = r.start * 60;
       var e = r.end * 60;
-      var hit = r.wrap ? (minuteOfDay >= s || minuteOfDay < e)
-                       : (minuteOfDay >= s && minuteOfDay < e);
-      if (hit) return r;
+      var hit = r.wrap ? (min >= s || min < e) : (min >= s && min < e);
+      if (hit) return r.slot;
     }
     return null;
   }
 
-  /* ---------- 4. 图片兜底：jpg 缺失时自动试 png / webp ---------- */
-  var slides = {};
-  Array.prototype.forEach.call(document.querySelectorAll(".slide"), function (slide) {
-    slides[slide.dataset.slot] = slide;
-
-    var img = slide.querySelector("img");
-    var base = img.dataset.base;
-    var idx = 0;
-
-    img.addEventListener("error", function () {
-      idx++;
-      if (idx < EXTS.length) {
-        img.src = base + EXTS[idx];
-      } else {
-        slide.classList.add("missing");
-        img.removeAttribute("src");
-      }
-    });
-  });
-
-  /* ---------- 5. 预载四张图，切换时不出空白 ---------- */
-  function preload() {
-    RULES.forEach(function (r) {
-      var im = new Image();
-      im.decoding = "async";
-      im.src = "assets/" + r.base + ".jpg";
-    });
-  }
-
-  /* ---------- 6. 渲染 ---------- */
-  var currentBase = null;
-  var clockEl = document.getElementById("hudClock");
-  var ruleEl  = document.getElementById("hudRule");
-  var tzEl    = document.getElementById("hudTz");
-
-  tzEl.textContent = preview ? "预览模式" : tzLabel;
+  var current = null;
 
   function render() {
-    var h, m, s;
-    if (preview) {
-      h = preview[0]; m = preview[1]; s = preview[2];
-    } else {
-      var z = zonedNow();
-      h = z.getUTCHours();
-      m = z.getUTCMinutes();
-      s = z.getUTCSeconds();
-    }
-
-    clockEl.textContent = pad(h) + ":" + pad(m) + ":" + pad(s);
-
-    var rule = matchRule(h * 60 + m);
-
-    if (rule && rule.base !== currentBase) {
-      currentBase = rule.base;
-      Object.keys(slides).forEach(function (slot) {
-        slides[slot].classList.toggle("is-on", Number(slot) === rule.base);
-      });
-      ruleEl.textContent = rule.name + " · " + rule.label;
-      document.title = rule.name + " · 分时图片展示";
-    } else if (!rule) {
-      ruleEl.textContent = "当前时段没有配置图片";
-    }
+    var slot = activeSlot(minuteOfDay());
+    if (slot === current) return;
+    current = slot;
+    Object.keys(slides).forEach(function (key) {
+      slides[key].classList.toggle("is-on", Number(key) === slot);
+    });
   }
 
   render();
-  preload();
-
-  // 每秒走一格；秒数同时处理浏览器休眠、跨天等跳变
   setInterval(render, 1000);
-
-  // 从后台切回前台时立即重算一次
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) render();
-  });
-  window.addEventListener("focus", render);
-
-  /* ---------- 7. 全屏按钮 ---------- */
-  var fsBtn = document.getElementById("fsBtn");
-
-  function toggleFullscreen() {
-    if (!document.fullscreenElement) {
-      var p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen();
-      if (p && p.catch) p.catch(function () {});
-    } else if (document.exitFullscreen) {
-      document.exitFullscreen();
-    }
-  }
-
-  fsBtn.addEventListener("click", toggleFullscreen);
-
-  document.addEventListener("fullscreenchange", function () {
-    fsBtn.setAttribute("aria-label", document.fullscreenElement ? "退出全屏" : "进入全屏");
-    render();
-  });
-
-  // 键盘快捷键：f 全屏 / h 隐藏或显示底部信息条
-  document.addEventListener("keydown", function (e) {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    var k = e.key.toLowerCase();
-    if (k === "f") toggleFullscreen();
-    if (k === "h") hud.classList.toggle("is-hidden");
   });
 })();
 </script>
